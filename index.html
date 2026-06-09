@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wireframe</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" data-lnb-state="expanded">
+      <header class="gnb">
+        <h1>wireframe</h1>
+      </header>
+
+      <div class="main-layout">
+        <aside class="lnb" aria-label="Local navigation">
+          <button
+            class="lnb-toggle"
+            type="button"
+            aria-label="LNB 접기"
+            aria-expanded="true"
+          >
+            <span class="toggle-icon" aria-hidden="true"></span>
+          </button>
+
+          <div class="lnb-content">
+            <div class="lnb-title">LNB</div>
+            <nav class="lnb-menu" aria-label="LNB menu">
+              <a class="is-active" href="#grid" data-menu-tab="grid">데이터 그리드</a>
+              <a href="#cardGrid" data-menu-tab="cardGrid">카드&amp;그리드</a>
+              <a href="#cardForm" data-menu-tab="cardForm">카드&amp;입력패널</a>
+              <a href="#gridTabs" data-menu-tab="gridTabs">그리드&amp;탭 구성</a>
+              <a href="#standardInfo" data-menu-tab="standardInfo">기준정보</a>
+            </nav>
+          </div>
+        </aside>
+
+        <main class="content">
+          <section class="workspace" aria-label="Sample content">
+            <div class="tab-panels">
+              <section class="tab-panel is-active" data-panel="grid" role="tabpanel">
+                <div class="panel-header">
+                  <h2>데이터 그리드 조회</h2>
+                </div>
+                <div id="grid-only"></div>
+              </section>
+
+              <section class="tab-panel" data-panel="cardGrid" role="tabpanel">
+                <div class="panel-header">
+                  <h2>좌측 카드리스트 기준 우측 데이터 그리드</h2>
+                </div>
+                <div class="split-view">
+                  <div class="card-list" id="card-grid-list"></div>
+                  <div id="card-grid-table"></div>
+                </div>
+              </section>
+
+              <section class="tab-panel" data-panel="cardForm" role="tabpanel">
+                <div class="panel-header">
+                  <h2>좌측 카드리스트 기준 우측 입력폼</h2>
+                </div>
+                <div class="split-view">
+                  <div class="card-list" id="card-form-list"></div>
+                  <form class="form-panel" id="input-form"></form>
+                </div>
+              </section>
+
+              <section class="tab-panel" data-panel="gridTabs" role="tabpanel">
+                <div class="panel-header">
+                  <h2>그리드 셀 선택 기준 하단 탭 구성</h2>
+                </div>
+                <div id="selectable-grid"></div>
+                <div class="detail-area">
+                  <div class="sub-tabs" role="tablist" aria-label="상세 정보 조회 방식">
+                    <button class="sub-tab is-active" type="button" data-sub-tab="form">입력 폼</button>
+                    <button class="sub-tab" type="button" data-sub-tab="accordion">아코디언</button>
+                    <button class="sub-tab" type="button" data-sub-tab="detailGrid">그리드</button>
+                  </div>
+                  <div class="sub-panel is-active" data-sub-panel="form">
+                    <form class="form-panel compact" id="detail-form"></form>
+                  </div>
+                  <div class="sub-panel" data-sub-panel="accordion">
+                    <div class="accordion" id="detail-accordion"></div>
+                  </div>
+                  <div class="sub-panel" data-sub-panel="detailGrid">
+                    <div id="detail-grid"></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="tab-panel" data-panel="standardInfo" role="tabpanel">
+                <div class="panel-header">
+                  <h2>기준정보 설정</h2>
+                </div>
+                <div class="standard-layout">
+                  <form class="standard-form" aria-label="UI 기준정보 설정">
+                    <div class="setting-field">
+                      <label for="header-size">헤더 텍스트 사이즈</label>
+                      <div class="setting-control">
+                        <input id="header-size" type="range" min="12" max="28" value="16" data-setting="header" />
+                        <input type="number" min="12" max="28" value="16" data-setting-number="header" />
+                        <span>px</span>
+                      </div>
+                    </div>
+                    <div class="setting-field">
+                      <label for="grid-size">그리드 텍스트 사이즈</label>
+                      <div class="setting-control">
+                        <input id="grid-size" type="range" min="11" max="20" value="13" data-setting="grid" />
+                        <input type="number" min="11" max="20" value="13" data-setting-number="grid" />
+                        <span>px</span>
+                      </div>
+                    </div>
+                    <div class="setting-field">
+                      <label for="caption-size">캡션 텍스트 사이즈</label>
+                      <div class="setting-control">
+                        <input id="caption-size" type="range" min="10" max="18" value="12" data-setting="caption" />
+                        <input type="number" min="10" max="18" value="12" data-setting-number="caption" />
+                        <span>px</span>
+                      </div>
+                    </div>
+                    <button class="standard-reset" type="button">기준값 원복</button>
+                  </form>
+
+                  <div class="standard-preview" aria-label="기준정보 미리보기">
+                    <h3>미리보기 헤더</h3>
+                    <p class="caption-text">캡션 텍스트는 설명, 라벨, 보조 문구 기준으로 사용합니다.</p>
+                    <table class="data-grid">
+                      <thead>
+                        <tr>
+                          <th><button class="sort-button" type="button"><span>항목</span><span class="sort-status"></span></button></th>
+                          <th><button class="sort-button" type="button"><span>값</span><span class="sort-status"></span></button></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>헤더</td>
+                          <td>16</td>
+                        </tr>
+                        <tr>
+                          <td>그리드</td>
+                          <td>13</td>
+                        </tr>
+                        <tr>
+                          <td>캡션</td>
+                          <td>12</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="action-dock" aria-live="polite" aria-label="선택 데이터 작업">
+            <div>
+              <strong id="dock-title">선택된 행에 대해 어떤 작업을 수행하시겠습니까?</strong>
+              <p id="dock-message">선택된 데이터가 없습니다.</p>
+            </div>
+            <div class="dock-actions">
+              <button type="button" data-action="delete">삭제</button>
+              <button type="button" data-action="excel">엑셀다운로드</button>
+              <button type="button" data-action="clear">선택해제</button>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
