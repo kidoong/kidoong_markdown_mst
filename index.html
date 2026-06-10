@@ -26,7 +26,8 @@
           <div class="lnb-content">
             <div class="lnb-title">LNB</div>
             <nav class="lnb-menu" aria-label="LNB menu">
-              <a class="is-active" href="#grid" data-menu-tab="grid">데이터 그리드</a>
+              <a class="is-active" href="#gridInput" data-menu-tab="gridInput">데이터 그리드 (입력)</a>
+              <a href="#gridView" data-menu-tab="gridView">데이터 그리드 (조회)</a>
               <a href="#cardGrid" data-menu-tab="cardGrid">카드&amp;그리드</a>
               <a href="#cardForm" data-menu-tab="cardForm">카드&amp;입력패널</a>
               <a href="#gridTabs" data-menu-tab="gridTabs">그리드&amp;탭 구성</a>
@@ -38,11 +39,18 @@
         <main class="content">
           <section class="workspace" aria-label="Sample content">
             <div class="tab-panels">
-              <section class="tab-panel is-active" data-panel="grid" role="tabpanel">
+              <section class="tab-panel is-active" data-panel="gridInput" role="tabpanel">
+                <div class="panel-header">
+                  <h2>데이터 그리드 입력</h2>
+                </div>
+                <div id="grid-input"></div>
+              </section>
+
+              <section class="tab-panel" data-panel="gridView" role="tabpanel">
                 <div class="panel-header">
                   <h2>데이터 그리드 조회</h2>
                 </div>
-                <div id="grid-only"></div>
+                <div id="grid-view"></div>
               </section>
 
               <section class="tab-panel" data-panel="cardGrid" role="tabpanel">
@@ -163,6 +171,47 @@
               <button type="button" data-action="clear">선택해제</button>
             </div>
           </section>
+
+          <div class="modal-backdrop" data-card-modal hidden>
+            <section class="card-modal" role="dialog" aria-modal="true" aria-labelledby="card-modal-title">
+              <header class="card-modal-header">
+                <h2 id="card-modal-title">카드 입력</h2>
+                <button type="button" class="modal-close" aria-label="모달 닫기"></button>
+              </header>
+              <form class="card-modal-form">
+                <div class="modal-section">
+                  <h3>카드 기본정보</h3>
+                  <div class="modal-field-grid">
+                    <div class="field is-required">
+                      <label>카드 ID <span class="required-mark">*</span></label>
+                      <input name="id" required />
+                    </div>
+                    <div class="field is-required">
+                      <label>카드명 <span class="required-mark">*</span></label>
+                      <input name="name" required />
+                    </div>
+                    <div class="field">
+                      <label>상태</label>
+                      <input name="status" />
+                    </div>
+                    <div class="field">
+                      <label>담당자</label>
+                      <input name="owner" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="modal-section">
+                  <h3>부가정보</h3>
+                  <div class="modal-extra" data-modal-extra></div>
+                </div>
+                <footer class="card-modal-actions">
+                  <button type="button" data-modal-action="cancel">취소</button>
+                  <button type="submit">저장</button>
+                </footer>
+              </form>
+            </section>
+          </div>
         </main>
       </div>
     </div>

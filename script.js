@@ -44,7 +44,12 @@ let selectedCell = { row: 0, col: 1, value: "알파 프로젝트", projectId: pr
 const sortStates = new Map();
 const checkedRowsByTable = new Map();
 const selectedRowByTable = new Map();
+const pageSizesByTable = new Map();
+const editStatesByTable = new Map();
+const hiddenCardsByList = new Map();
+let activeCardModal = null;
 let activeSelection = null;
+let activePatternName = "gridInput";
 
 function getTableKey(target) {
   return target.id || target.dataset.tableKey || "default";
@@ -99,12 +104,69 @@ function setSelectedRow(tableKey, row) {
   updateActionDock();
 }
 
+function isSameSingleCheckedRow(tableKey, rowKey) {
+  const checkedRows = getCheckedRows(tableKey);
+  return checkedRows.length === 1 && checkedRows[0].key === rowKey;
+}
+
+function shouldConfirmRowSelection(tableKey, rowKey) {
+  const checkedRows = getCheckedRows(tableKey);
+  if (checkedRows.length === 0) return false;
+  return !isSameSingleCheckedRow(tableKey, rowKey);
+}
+
+function shouldConfirmCheckSelection(tableKey, rowKey) {
+  const selectedRow = getSelectedRow(tableKey);
+  if (!selectedRow) return false;
+  return selectedRow.key !== rowKey;
+}
+
+function confirmLatestSelection(message) {
+  return window.confirm(message);
+}
+
 function clearTableSelection(tableKey) {
   checkedRowsByTable.delete(tableKey);
   selectedRowByTable.delete(tableKey);
   if (activeSelection?.tableKey === tableKey) {
     activeSelection = null;
   }
+  updateActionDock();
+}
+
+function getPanelForTable(tableKey) {
+  return document.querySelector(`#${tableKey}`)?.closest(".tab-panel") || null;
+}
+
+function isSelectionInActivePattern(selection = activeSelection) {
+  if (!selection) return false;
+  return getPanelForTable(selection.tableKey)?.dataset.panel === activePatternName;
+}
+
+function refreshActiveSelectionForPattern() {
+  if (isSelectionInActivePattern()) {
+    updateActionDock();
+    return;
+  }
+
+  const activePanel = document.querySelector(`.tab-panel[data-panel="${activePatternName}"]`);
+  const tableFrame = activePanel?.querySelector(".grid-frame[data-table-key]");
+  const tableKey = tableFrame?.dataset.tableKey;
+
+  if (!tableKey) {
+    activeSelection = null;
+    updateActionDock();
+    return;
+  }
+
+  if (getCheckedRows(tableKey).length > 0) {
+    activeSelection = { tableKey, type: "checked" };
+  } else if (getSelectedRow(tableKey)) {
+    activeSelection = { tableKey, type: "row" };
+  } else {
+    activeSelection = null;
+  }
+
   updateActionDock();
 }
 
@@ -151,9 +213,27 @@ function downloadSelectedRows() {
   updateActionDock(`${selectedRows.length}건 엑셀다운로드 처리 완료`);
 }
 
+function focusGridDraftInput(tableKey) {
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`[data-table-key="${tableKey}"] .grid-edit-input`);
+    input?.focus();
+  });
+}
+
+function focusCardModalInput() {
+  requestAnimationFrame(() => {
+    const input = document.querySelector('[data-card-modal] input[name="id"]');
+    input?.focus();
+  });
+}
+
 function renderTable(target, headers, rows, options = {}) {
   const tableKey = getTableKey(target);
   const sortState = sortStates.get(tableKey) || [];
+  const pageSize = pageSizesByTable.get(tableKey) || 10;
+  const editState = editStatesByTable.get(tableKey) || null;
+  const requiredColumns = options.requiredColumns || [0, 1];
+  const showActions = options.showActions !== false;
   const sourceRows = rows.map((row, index) => ({
     row,
     meta: options.rowMeta?.[index] || {},
@@ -182,6 +262,95 @@ function renderTable(target, headers, rows, options = {}) {
     });
   }
 
+  const visibleRows = displayRows.slice(0, pageSize);
+
+  const tableFrame = document.createElement("div");
+  tableFrame.className = "grid-frame";
+  tableFrame.dataset.tableKey = tableKey;
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "grid-toolbar";
+  toolbar.innerHTML = `
+    <label class="page-size-control">
+      <span>몇 개씩 보기</span>
+      <select aria-label="몇 개씩 보기">
+        <option value="10">10개</option>
+        <option value="20">20개</option>
+        <option value="50">50개</option>
+        <option value="100">100개</option>
+      </select>
+    </label>
+    <div class="grid-actions">
+      <button type="button" data-grid-action="new">신규</button>
+      <button type="button" data-grid-action="edit">편집</button>
+      <button type="button" data-grid-action="cancel">취소</button>
+      <button type="button" data-grid-action="save">저장</button>
+    </div>
+  `;
+
+  const pageSizeSelect = toolbar.querySelector("select");
+  pageSizeSelect.value = String(pageSize);
+  pageSizeSelect.addEventListener("change", () => {
+    pageSizesByTable.set(tableKey, Number(pageSizeSelect.value));
+    renderTable(target, headers, rows, options);
+  });
+
+  const newButton = toolbar.querySelector('[data-grid-action="new"]');
+  const editButton = toolbar.querySelector('[data-grid-action="edit"]');
+  const cancelButton = toolbar.querySelector('[data-grid-action="cancel"]');
+  const saveButton = toolbar.querySelector('[data-grid-action="save"]');
+  if (!showActions) {
+    toolbar.querySelector(".grid-actions").remove();
+  } else {
+    editButton.disabled = !selectedRow;
+    cancelButton.disabled = !editState;
+    saveButton.disabled = !editState;
+    newButton.addEventListener("click", () => {
+      editStatesByTable.set(tableKey, {
+        mode: "new",
+        row: headers.map(() => ""),
+      });
+      renderTable(target, headers, rows, options);
+      focusGridDraftInput(tableKey);
+    });
+    editButton.addEventListener("click", () => {
+      const row = getSelectedRow(tableKey);
+      if (!row) return;
+      editStatesByTable.set(tableKey, {
+        key: row.key,
+        mode: "edit",
+        row: [...row.row],
+      });
+      renderTable(target, headers, rows, options);
+      focusGridDraftInput(tableKey);
+    });
+    cancelButton.addEventListener("click", () => {
+      if (!editStatesByTable.has(tableKey)) return;
+      editStatesByTable.delete(tableKey);
+      renderTable(target, headers, rows, options);
+    });
+    saveButton.addEventListener("click", () => {
+      if (!editStatesByTable.has(tableKey)) return;
+      const currentEditState = editStatesByTable.get(tableKey);
+      const missingRequiredFields = requiredColumns
+        .filter((columnIndex) => !String(currentEditState.row[columnIndex] || "").trim())
+        .map((columnIndex) => headers[columnIndex]);
+
+      if (missingRequiredFields.length > 0) {
+        window.alert(`${missingRequiredFields.join(", ")} 필드는 필수 입력 항목입니다. 입력하시기 바랍니다.`);
+        focusGridDraftInput(tableKey);
+        return;
+      }
+
+      const mode = currentEditState.mode;
+      editStatesByTable.delete(tableKey);
+      window.alert(mode === "new" ? "신규 행 저장 처리 완료" : "편집 행 저장 처리 완료");
+      renderTable(target, headers, rows, options);
+    });
+  }
+
+  tableFrame.appendChild(toolbar);
+
   const table = document.createElement("table");
   table.className = "data-grid";
   const thead = document.createElement("thead");
@@ -191,30 +360,32 @@ function renderTable(target, headers, rows, options = {}) {
   checkTh.className = "check-cell";
   checkTh.innerHTML = `<input type="checkbox" aria-label="전체 행 선택" />`;
   const headerCheckbox = checkTh.querySelector("input");
-  headerCheckbox.checked = displayRows.length > 0 && displayRows.every(({ row, meta }, index) =>
+  headerCheckbox.checked = visibleRows.length > 0 && visibleRows.every(({ row, meta }, index) =>
     checkedKeys.has(getRowKey(row, meta, index)),
   );
   headerCheckbox.addEventListener("change", () => {
+    const isCheckingAll = headerCheckbox.checked;
     const hasSelectedRow = Boolean(getSelectedRow(tableKey));
     const shouldCheckLatest =
+      isCheckingAll &&
       hasSelectedRow &&
-      window.confirm(
+      confirmLatestSelection(
         "선택된 행이 있습니다.\n확인: 선택 해제 후 체크 작업 수행\n취소: 선택 상태 유지",
       );
 
-    if (hasSelectedRow && !shouldCheckLatest) {
+    if (isCheckingAll && hasSelectedRow && !shouldCheckLatest) {
       activeSelection = { tableKey, type: "row" };
       updateActionDock();
       renderTable(target, headers, rows, options);
       return;
     }
 
-    if (hasSelectedRow) {
+    if (isCheckingAll && hasSelectedRow) {
       selectedRowByTable.delete(tableKey);
     }
 
     const nextRows = headerCheckbox.checked
-      ? displayRows.map(({ row, meta }, index) => ({
+      ? visibleRows.map(({ row, meta }, index) => ({
           key: getRowKey(row, meta, index),
           row,
           meta,
@@ -232,11 +403,12 @@ function renderTable(target, headers, rows, options = {}) {
     const sortItem = sortIndex >= 0 ? sortState[sortIndex] : null;
     const arrow = sortItem ? (sortItem.direction === "asc" ? "▲" : "▼") : "";
     const sortOrder = sortItem ? sortIndex + 1 : "";
+    const requiredMark = requiredColumns.includes(columnIndex) ? ' <span class="required-mark">*</span>' : "";
 
     button.className = "sort-button";
     button.type = "button";
     button.innerHTML = `
-      <span>${header}</span>
+      <span>${header}${requiredMark}</span>
       <span class="sort-status">
         <span class="sort-arrow">${arrow}</span>
         <span class="sort-order">${sortOrder}</span>
@@ -273,28 +445,29 @@ function renderTable(target, headers, rows, options = {}) {
   table.appendChild(thead);
 
   const body = document.createElement("tbody");
-  displayRows.forEach(({ row, meta }, rowIndex) => {
+  visibleRows.forEach(({ row, meta }, rowIndex) => {
     const tr = document.createElement("tr");
     const rowKey = getRowKey(row, meta, rowIndex);
     const isRowSelected = selectedRow?.key === rowKey;
     const isRowChecked = checkedKeys.has(rowKey);
     tr.classList.toggle("is-row-selected", isRowSelected);
     tr.classList.toggle("is-row-checked", isRowChecked);
+    tr.classList.toggle("is-editing", editState?.mode === "edit" && editState.key === rowKey);
     tr.addEventListener("click", () => {
-      const hasCheckedRows = getCheckedRows(tableKey).length > 0;
+      const needsConfirmation = shouldConfirmRowSelection(tableKey, rowKey);
       const shouldSelectLatest =
-        hasCheckedRows &&
-        window.confirm(
+        needsConfirmation &&
+        confirmLatestSelection(
           "체크된 데이터가 있습니다.\n확인: 체크 해제 후 선택한 행 선택\n취소: 체크 상태 유지",
         );
 
-      if (hasCheckedRows && !shouldSelectLatest) {
+      if (needsConfirmation && !shouldSelectLatest) {
         activeSelection = { tableKey, type: "checked" };
         updateActionDock();
         return;
       }
 
-      if (hasCheckedRows) {
+      if (needsConfirmation) {
         checkedRowsByTable.delete(tableKey);
       }
 
@@ -311,21 +484,22 @@ function renderTable(target, headers, rows, options = {}) {
     checkbox.setAttribute("aria-label", `${row[0]} 선택`);
     checkbox.addEventListener("click", (event) => event.stopPropagation());
     checkbox.addEventListener("change", (event) => {
-      const hasSelectedRow = Boolean(getSelectedRow(tableKey));
+      const isChecking = event.target.checked;
+      const needsConfirmation = isChecking && shouldConfirmCheckSelection(tableKey, rowKey);
       const shouldCheckLatest =
-        hasSelectedRow &&
-        window.confirm(
+        needsConfirmation &&
+        confirmLatestSelection(
           "선택된 행이 있습니다.\n확인: 선택 해제 후 체크 작업 수행\n취소: 선택 상태 유지",
         );
 
-      if (hasSelectedRow && !shouldCheckLatest) {
+      if (needsConfirmation && !shouldCheckLatest) {
         activeSelection = { tableKey, type: "row" };
         updateActionDock();
         renderTable(target, headers, rows, options);
         return;
       }
 
-      if (hasSelectedRow) {
+      if (needsConfirmation) {
         selectedRowByTable.delete(tableKey);
       }
 
@@ -341,8 +515,22 @@ function renderTable(target, headers, rows, options = {}) {
 
     row.forEach((cell, colIndex) => {
       const td = document.createElement("td");
-      td.textContent = cell;
       td.classList.toggle("is-number", isNumericValue(cell));
+
+      if (editState?.mode === "edit" && editState.key === rowKey) {
+        const input = document.createElement("input");
+        input.className = "grid-edit-input";
+        input.value = editState.row[colIndex] || "";
+        input.addEventListener("click", (event) => event.stopPropagation());
+        input.addEventListener("input", () => {
+          editState.row[colIndex] = input.value;
+        });
+        td.replaceChildren(input);
+        tr.appendChild(td);
+        return;
+      }
+
+      td.textContent = cell;
 
       if (options.selectable) {
         td.classList.add("is-selectable");
@@ -351,20 +539,20 @@ function renderTable(target, headers, rows, options = {}) {
         }
         td.addEventListener("click", (event) => {
           event.stopPropagation();
-          const hasCheckedRows = getCheckedRows(tableKey).length > 0;
+          const needsConfirmation = shouldConfirmRowSelection(tableKey, rowKey);
           const shouldSelectLatest =
-            hasCheckedRows &&
-            window.confirm(
+            needsConfirmation &&
+            confirmLatestSelection(
               "체크된 데이터가 있습니다.\n확인: 체크 해제 후 선택한 행 선택\n취소: 체크 상태 유지",
             );
 
-          if (hasCheckedRows && !shouldSelectLatest) {
+          if (needsConfirmation && !shouldSelectLatest) {
             activeSelection = { tableKey, type: "checked" };
             updateActionDock();
             return;
           }
 
-          if (hasCheckedRows) {
+          if (needsConfirmation) {
             checkedRowsByTable.delete(tableKey);
           }
 
@@ -385,24 +573,249 @@ function renderTable(target, headers, rows, options = {}) {
     body.appendChild(tr);
   });
 
+  if (editState?.mode === "new") {
+    const tr = document.createElement("tr");
+    tr.className = "is-editing is-new-row";
+
+    const checkTd = document.createElement("td");
+    checkTd.className = "check-cell";
+    checkTd.innerHTML = `<span class="new-row-badge">신규</span>`;
+    tr.appendChild(checkTd);
+
+    headers.forEach((header, colIndex) => {
+      const td = document.createElement("td");
+      const input = document.createElement("input");
+      input.className = "grid-edit-input";
+      input.placeholder = `${header} 입력`;
+      input.value = editState.row[colIndex] || "";
+      input.addEventListener("click", (event) => event.stopPropagation());
+      input.addEventListener("input", () => {
+        editState.row[colIndex] = input.value;
+      });
+      td.appendChild(input);
+      tr.appendChild(td);
+    });
+
+    body.appendChild(tr);
+  }
+
   table.appendChild(body);
-  target.replaceChildren(table);
+  tableFrame.appendChild(table);
+  target.replaceChildren(tableFrame);
 }
 
 function renderCards(target, activeId, onSelect) {
+  const listKey = target.id;
+  const hiddenCards = hiddenCardsByList.get(listKey) || new Set();
+  const visibleProjects = projects.filter((project) => !hiddenCards.has(project.id));
+
   target.replaceChildren(
-    ...projects.map((project) => {
-      const button = document.createElement("button");
-      button.className = `data-card${project.id === activeId ? " is-active" : ""}`;
-      button.type = "button";
-      button.innerHTML = `
-        <strong>${project.name}</strong>
-        <span>${project.id} · ${project.status} · ${project.owner}</span>
-      `;
-      button.addEventListener("click", () => onSelect(project.id));
-      return button;
-    }),
+    createCardToolbar(target, activeId, onSelect),
+    ...visibleProjects.map((project) => createCardItem(project, activeId, onSelect)),
   );
+}
+
+function createCardToolbar(target, activeId, onSelect) {
+  const listKey = target.id;
+  const toolbar = document.createElement("div");
+  toolbar.className = "card-toolbar";
+  toolbar.innerHTML = `
+    <div class="card-actions">
+      <button type="button" data-card-action="new">신규</button>
+      <button type="button" data-card-action="edit">편집</button>
+      <button type="button" data-card-action="cancel">취소</button>
+      <button type="button" data-card-action="delete">삭제</button>
+    </div>
+  `;
+
+  const newButton = toolbar.querySelector('[data-card-action="new"]');
+  const editButton = toolbar.querySelector('[data-card-action="edit"]');
+  const cancelButton = toolbar.querySelector('[data-card-action="cancel"]');
+  const deleteButton = toolbar.querySelector('[data-card-action="delete"]');
+
+  editButton.disabled = !activeId;
+  cancelButton.disabled = !activeCardModal || activeCardModal.listKey !== listKey;
+  deleteButton.disabled = !activeId;
+
+  newButton.addEventListener("click", () => {
+    openCardModal({ mode: "new", listKey, target, activeId, onSelect });
+  });
+
+  editButton.addEventListener("click", () => {
+    const project = projects.find((item) => item.id === activeId);
+    if (!project) return;
+    openCardModal({
+      mode: "edit",
+      listKey,
+      projectId: project.id,
+      target,
+      activeId,
+      onSelect,
+      values: {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        owner: project.owner,
+      },
+    });
+  });
+
+  cancelButton.addEventListener("click", () => {
+    closeCardModal();
+    renderCards(target, activeId, onSelect);
+  });
+
+  deleteButton.addEventListener("click", () => {
+    if (!activeId) return;
+    if (!window.confirm(`${activeId} 카드를 삭제하시겠습니까?`)) return;
+    const nextHiddenCards = new Set(hiddenCardsByList.get(listKey) || []);
+    nextHiddenCards.add(activeId);
+    hiddenCardsByList.set(listKey, nextHiddenCards);
+    const nextProject = projects.find((project) => !nextHiddenCards.has(project.id));
+    if (nextProject) {
+      onSelect(nextProject.id);
+    } else {
+      renderCards(target, activeId, onSelect);
+    }
+  });
+
+  return toolbar;
+}
+
+function createCardItem(project, activeId, onSelect) {
+  const button = document.createElement("button");
+  button.className = `data-card${project.id === activeId ? " is-active" : ""}`;
+  button.type = "button";
+  button.innerHTML = `
+    <strong>${project.name}</strong>
+    <span>${project.id} · ${project.status} · ${project.owner}</span>
+  `;
+  button.addEventListener("click", () => onSelect(project.id));
+  return button;
+}
+
+function openCardModal(config) {
+  const modal = document.querySelector("[data-card-modal]");
+  const title = document.querySelector("#card-modal-title");
+  const form = document.querySelector(".card-modal-form");
+  const values = config.values || { id: "", name: "", status: "", owner: "" };
+
+  activeCardModal = config;
+  title.textContent = config.mode === "new" ? "카드 신규" : "카드 편집";
+  form.elements.id.value = values.id;
+  form.elements.name.value = values.name;
+  form.elements.status.value = values.status;
+  form.elements.owner.value = values.owner;
+  renderCardModalExtra(config);
+  modal.hidden = false;
+  focusCardModalInput();
+}
+
+function renderCardModalExtra(config) {
+  const extra = document.querySelector("[data-modal-extra]");
+  const projectId = config.projectId || selectedCardGridId || selectedCardFormId || projects[0].id;
+
+  if (config.listKey === "card-grid-list") {
+    const rows = rowsByProject[projectId] || rowsByProject[projects[0].id];
+    extra.className = "modal-extra modal-extra-grid";
+    extra.innerHTML = `
+      <table class="data-grid modal-mini-grid">
+        <thead>
+          <tr>
+            <th>코드</th>
+            <th>항목</th>
+            <th>상태</th>
+            <th>완료율</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (row) => `
+                <tr>
+                  <td><input value="${row[0]}" /></td>
+                  <td><input value="${row[1]}" /></td>
+                  <td><input value="${row[2]}" /></td>
+                  <td><input value="${row[3]}" /></td>
+                </tr>
+              `,
+            )
+            .join("")}
+          <tr class="is-new-row">
+            <td><input placeholder="코드 입력" /></td>
+            <td><input placeholder="항목 입력" /></td>
+            <td><input placeholder="상태 입력" /></td>
+            <td><input placeholder="완료율 입력" /></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    return;
+  }
+
+  const project = projects.find((item) => item.id === projectId) || projects[0];
+  const fields = [
+    ["우선순위", "보통"],
+    ["진행률", "72%"],
+    ["검토자", "운영팀"],
+    ["마감일", project.due],
+    ["예산", project.budget],
+    ["메모", "입력 대기"],
+  ];
+
+  extra.className = "modal-extra modal-extra-form";
+  extra.innerHTML = fields
+    .map(
+      ([label, value]) => `
+        <div class="field">
+          <label>${label}</label>
+          <input value="${value}" />
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function closeCardModal() {
+  document.querySelector("[data-card-modal]").hidden = true;
+  activeCardModal = null;
+}
+
+function bindCardModal() {
+  const modal = document.querySelector("[data-card-modal]");
+  const form = document.querySelector(".card-modal-form");
+
+  modal.querySelector(".modal-close").addEventListener("click", closeCardModal);
+  modal.querySelector('[data-modal-action="cancel"]').addEventListener("click", closeCardModal);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeCardModal();
+    }
+  });
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!activeCardModal) return;
+
+    const id = form.elements.id.value.trim();
+    const name = form.elements.name.value.trim();
+    const missing = [];
+
+    if (!id) missing.push("카드 ID");
+    if (!name) missing.push("카드명");
+
+    if (missing.length > 0) {
+      window.alert(`${missing.join(", ")} 필드는 필수 입력 항목입니다. 입력하시기 바랍니다.`);
+      focusCardModalInput();
+      return;
+    }
+
+    const message = activeCardModal.mode === "new" ? "카드 신규 저장 처리 완료" : "카드 편집 저장 처리 완료";
+    window.alert(message);
+    const { target, activeId, onSelect } = activeCardModal;
+    closeCardModal();
+    renderCards(target, activeId, onSelect);
+  });
 }
 
 function renderForm(target, project) {
@@ -433,18 +846,31 @@ function renderForm(target, project) {
   );
 }
 
-function renderGridOnly() {
+function getProjectRows() {
+  return projects.map((project) => [
+    project.id,
+    project.name,
+    project.owner,
+    project.status,
+    project.budget,
+    project.due,
+  ]);
+}
+
+function renderGridInput() {
   renderTable(
-    document.querySelector("#grid-only"),
+    document.querySelector("#grid-input"),
     ["ID", "프로젝트", "담당자", "상태", "예산", "마감일"],
-    projects.map((project) => [
-      project.id,
-      project.name,
-      project.owner,
-      project.status,
-      project.budget,
-      project.due,
-    ]),
+    getProjectRows(),
+  );
+}
+
+function renderGridView() {
+  renderTable(
+    document.querySelector("#grid-view"),
+    ["ID", "프로젝트", "담당자", "상태", "예산", "마감일"],
+    getProjectRows(),
+    { showActions: false },
   );
 }
 
@@ -576,6 +1002,8 @@ function bindStandardSettings() {
 }
 
 function activatePattern(tabName) {
+  activePatternName = tabName;
+
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.classList.toggle("is-active", panel.dataset.panel === tabName);
   });
@@ -583,6 +1011,8 @@ function activatePattern(tabName) {
   document.querySelectorAll(".lnb-menu a").forEach((item) => {
     item.classList.toggle("is-active", item.dataset.menuTab === tabName);
   });
+
+  refreshActiveSelectionForPattern();
 }
 
 document.querySelectorAll(".lnb-menu a").forEach((menu) => {
@@ -614,6 +1044,7 @@ document.querySelector(".action-dock").addEventListener("click", (event) => {
       clearTableSelection(clearedKey);
       document.querySelectorAll(".data-grid").forEach((grid) => {
         grid.querySelectorAll(".is-row-selected").forEach((row) => row.classList.remove("is-row-selected"));
+        grid.querySelectorAll(".is-row-checked").forEach((row) => row.classList.remove("is-row-checked"));
         grid.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
           checkbox.checked = false;
         });
@@ -631,9 +1062,11 @@ document.querySelector(".action-dock").addEventListener("click", (event) => {
   }
 });
 
-renderGridOnly();
+renderGridInput();
+renderGridView();
 renderCardGrid();
 renderCardForm();
 renderSelectableGrid();
 renderCellDetails();
 bindStandardSettings();
+bindCardModal();
